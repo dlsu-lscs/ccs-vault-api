@@ -16,3 +16,5 @@ app.get("/health", (_req, res) => {
 });
 
 export default app;
+const broken: number = "not a number";
+export { broken };
