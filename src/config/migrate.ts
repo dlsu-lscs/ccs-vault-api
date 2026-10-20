@@ -4,6 +4,16 @@ import pool from "./db.js";
 
 const MIGRATIONS_DIR = path.resolve(process.cwd(), "database/migrations");
 
+function parseSqlFile(content: string): { up: string; down: string } {
+  const upMatch = content.match(/--\s*Up\b[\r\n]*([\s\S]*?)(?=--\s*Down\b|$)/i);
+  const downMatch = content.match(/--\s*Down\b[\r\n]*([\s\S]*)$/i);
+
+  const up = upMatch ? upMatch[1].trim() : content.trim();
+  const down = downMatch ? downMatch[1].trim() : "";
+
+  return { up, down };
+}
+
 async function ensureMigrationTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -32,27 +42,32 @@ async function migrateUp(): Promise<void> {
 
   const files = fs
     .readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith(".up.sql") || (file.endsWith(".sql") && !file.endsWith(".down.sql")))
+    .filter((file) => file.endsWith(".sql"))
     .sort();
 
   let appliedCount = 0;
 
   for (const file of files) {
-    const migrationName = file.replace(/(\.up)?\.sql$/, "");
-    if (appliedMigrations.has(migrationName)) {
+    if (appliedMigrations.has(file)) {
       continue;
     }
 
     const filePath = path.join(MIGRATIONS_DIR, file);
-    const sql = fs.readFileSync(filePath, "utf8");
+    const fileContent = fs.readFileSync(filePath, "utf8");
+    const { up } = parseSqlFile(fileContent);
+
+    if (!up) {
+      console.warn(`Skipping empty up-migration in: ${file}`);
+      continue;
+    }
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN;");
-      await client.query(sql);
+      await client.query(up);
       await client.query(
         "INSERT INTO schema_migrations (name) VALUES ($1);",
-        [migrationName]
+        [file]
       );
       await client.query("COMMIT;");
       console.log(`Applied migration: ${file}`);
@@ -87,24 +102,28 @@ async function migrateDown(): Promise<void> {
       return;
     }
 
-    const migrationName = result.rows[0].name;
-    const downFileName = `${migrationName}.down.sql`;
-    const downFilePath = path.join(MIGRATIONS_DIR, downFileName);
+    const migrationFileName = result.rows[0].name;
+    const migrationFilePath = path.join(MIGRATIONS_DIR, migrationFileName);
 
-    if (!fs.existsSync(downFilePath)) {
-      throw new Error(`Rollback file not found: ${downFileName}`);
+    if (!fs.existsSync(migrationFilePath)) {
+      throw new Error(`Migration file not found: ${migrationFileName}`);
     }
 
-    const sql = fs.readFileSync(downFilePath, "utf8");
+    const fileContent = fs.readFileSync(migrationFilePath, "utf8");
+    const { down } = parseSqlFile(fileContent);
+
+    if (!down) {
+      throw new Error(`No rollback (-- Down) section found in: ${migrationFileName}`);
+    }
 
     await client.query("BEGIN;");
-    await client.query(sql);
+    await client.query(down);
     await client.query(
       "DELETE FROM schema_migrations WHERE name = $1;",
-      [migrationName]
+      [migrationFileName]
     );
     await client.query("COMMIT;");
-    console.log(`Rolled back migration: ${downFileName}`);
+    console.log(`Rolled back migration: ${migrationFileName}`);
   } catch (error) {
     await client.query("ROLLBACK;");
     console.error("Failed to rollback migration:", error);
