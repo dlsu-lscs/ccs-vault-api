@@ -10,7 +10,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "migrate:up": "tsx src/config/migrate.ts up",
+    "migrate:down": "tsx src/config/migrate.ts down"
   },
   "repository": {
     "type": "git",
