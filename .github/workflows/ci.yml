@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  secrets-and-dockerfile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans history
+          persist-credentials: false
+      - name: Gitleaks (secret scan)
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 detect --source /repo --redact
+      - name: Hadolint (Dockerfile lint)
+        run: docker run --rm -i hadolint/hadolint:v2.12.0-alpine < Dockerfile
+
+  image-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t ccs-vault-api:${{ github.sha }} .
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ccs-vault-api:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

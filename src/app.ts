@@ -14,5 +14,9 @@ app.get("/", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/courses", courseRoutes);
+// Liveness only; add a DB-backed /ready once pg is used.
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
 
 export default app;
