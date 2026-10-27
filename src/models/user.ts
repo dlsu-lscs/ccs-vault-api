@@ -8,10 +8,3 @@ export interface User {
   role: UserRole;
   created_at: Date;
 }
-
-export interface CreateUserInput {
-  google_sub: string;
-  email: string;
-  name: string;
-  role?: UserRole;
-}

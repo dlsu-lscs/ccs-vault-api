@@ -47,18 +47,7 @@ export async function validateSession(
   }
 
   const tokenHash = hashSessionToken(rawToken);
-  const sessionWithUser = await sessionRepository.findSessionWithUserById(tokenHash);
-
-  if (!sessionWithUser) {
-    return null;
-  }
-
-  if (new Date(sessionWithUser.expires_at).getTime() <= Date.now()) {
-    await sessionRepository.deleteSessionById(tokenHash);
-    return null;
-  }
-
-  return sessionWithUser;
+  return sessionRepository.findSessionWithUserById(tokenHash);
 }
 
 export async function deleteSession(rawToken: string): Promise<boolean> {

@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS topics (
 CREATE TABLE IF NOT EXISTS resources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) NOT NULL,
-    description TEXT NOT NULL,
+    description TEXT,
     resource_type VARCHAR(50) NOT NULL,
     file_key TEXT,
     file_name VARCHAR(255),

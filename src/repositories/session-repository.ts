@@ -53,7 +53,7 @@ export async function findSessionWithUserById(
       u.created_at AS user_created_at
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.id = $1;
+    WHERE s.id = $1 AND s.expires_at > now();
   `;
 
   const result = await pool.query<SessionWithUserRow>(query, [id]);

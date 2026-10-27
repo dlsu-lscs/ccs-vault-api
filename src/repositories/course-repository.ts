@@ -13,7 +13,7 @@ export async function findAllCoursesWithPublishedResourceCount(): Promise<
     FROM courses c
     LEFT JOIN resources r ON c.id = r.course_id AND r.published = true
     GROUP BY c.id, c.code, c.name
-    ORDER BY c.code ASC;
+    ORDER BY lower(c.code) ASC;
   `;
 
   const result = await pool.query<CourseWithResourceCount>(query);
