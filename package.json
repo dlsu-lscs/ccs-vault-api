@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "Backend API for CCS Vault, handling business logic, authentication, and database operations.",
-  "main": "server.js",
+  "main": "dist/server.js",
   "directories": {
     "doc": "docs"
   },
@@ -11,6 +11,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
+    "test": "tsx --test tests/**/*.test.ts",
     "migrate:up": "tsx src/config/migrate.ts up",
     "migrate:down": "tsx src/config/migrate.ts down"
   },

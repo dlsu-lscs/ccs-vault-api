@@ -1,11 +1,11 @@
 # Environment configuration
 
-Only `PORT` is read by the code today. The rest are planned and marked so; update this table when the code starts using them.
+Only `PORT` and `DATABASE_URL` are read by the code today. The rest are planned and marked so; update this table when the code starts using them.
 
 | Variable | Used by code | Secret | Phase | Purpose |
 |---|---|---|---|---|
 | `PORT` | yes | no | runtime | HTTP port (default 3001) |
-| `DATABASE_URL` | planned (#24) | yes | runtime | PostgreSQL connection string |
+| `DATABASE_URL` | yes | yes | runtime | PostgreSQL connection string |
 | `ALLOWED_ORIGINS` | planned | no | runtime | Allowed frontend origins (CORS) |
 | `R2_ACCOUNT_ID` | planned (#25) | no | runtime | Cloudflare account |
 | `R2_ACCESS_KEY_ID` | planned (#25) | yes | runtime | R2 access key (server-side only) |
