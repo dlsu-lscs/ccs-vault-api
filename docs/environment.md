@@ -1,11 +1,14 @@
 # Environment configuration
 
-Only `PORT` is read by the code today. The rest are planned and marked so; update this table when the code starts using them.
+Variables marked "yes" are read by the code at runtime. The rest are planned and marked so; update this table when the code starts using them.
 
 | Variable | Used by code | Secret | Phase | Purpose |
 |---|---|---|---|---|
 | `PORT` | yes | no | runtime | HTTP port (default 3001) |
-| `DATABASE_URL` | planned (#24) | yes | runtime | PostgreSQL connection string |
+| `NODE_ENV` | yes | no | runtime | Environment mode (`development`, `staging`, `production`, `test`) |
+| `DATABASE_URL` | yes | yes | runtime | PostgreSQL connection string |
+| `GOOGLE_CLIENT_ID` | yes | yes | runtime | Google OAuth Client ID for verifying ID tokens |
+| `TEST_DATABASE_URL` | yes (tests) | no | test | Optional test PostgreSQL connection string (defaults to `.../ccs_vault_test`) |
 | `ALLOWED_ORIGINS` | planned | no | runtime | Allowed frontend origins (CORS) |
 | `R2_ACCOUNT_ID` | planned (#25) | no | runtime | Cloudflare account |
 | `R2_ACCESS_KEY_ID` | planned (#25) | yes | runtime | R2 access key (server-side only) |
