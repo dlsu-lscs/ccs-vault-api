@@ -11,7 +11,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 \"tests/**/*.test.ts\"",
     "migrate:up": "tsx src/config/migrate.ts up",
     "migrate:down": "tsx src/config/migrate.ts down"
   },
