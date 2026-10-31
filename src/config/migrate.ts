@@ -31,7 +31,7 @@ async function getAppliedMigrations(): Promise<Set<string>> {
   return new Set(result.rows.map((row) => row.name));
 }
 
-async function migrateUp(): Promise<void> {
+export async function migrateUp(): Promise<void> {
   await ensureMigrationTable();
   const appliedMigrations = await getAppliedMigrations();
 
@@ -88,7 +88,7 @@ async function migrateUp(): Promise<void> {
   }
 }
 
-async function migrateDown(): Promise<void> {
+export async function migrateDown(): Promise<void> {
   await ensureMigrationTable();
 
   const client = await pool.connect();
@@ -152,4 +152,14 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+const scriptArg = process.argv[1]?.replace(/\\/g, "/");
+const isDirectCli =
+  scriptArg &&
+  (scriptArg.endsWith("/migrate.ts") || scriptArg.endsWith("/migrate.js"));
+
+if (isDirectCli) {
+  if (!process.env.NODE_ENV) {
+    process.env.NODE_ENV = "development";
+  }
+  main();
+}
