@@ -5,9 +5,7 @@ import { requireAuth } from "../middleware/auth-middleware.js";
 const router = Router();
 
 router.post("/sign-in", signIn);
-router.post("/login", signIn);
 router.post("/sign-out", signOut);
-router.post("/logout", signOut);
 router.get("/me", requireAuth, getCurrentUser);
 
 export default router;

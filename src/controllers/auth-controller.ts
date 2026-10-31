@@ -1,39 +1,61 @@
 import { Request, Response } from "express";
 import {
+  verifyGoogleIdToken,
+  VerifiedGoogleUser,
+} from "../services/google-auth-service.js";
+import {
   clearSessionCookie,
   createSession,
   deleteSession,
   parseSessionTokenFromCookie,
   setSessionCookie,
 } from "../services/session-service.js";
-import { getOrCreateUserFromGoogle } from "../services/user-service.js";
+import {
+  getOrCreateUserFromGoogle,
+  getUserByGoogleSub,
+} from "../services/user-service.js";
 
 export async function signIn(req: Request, res: Response): Promise<void> {
-  const { email, name } = req.body ?? {};
-  const google_sub = req.body?.google_sub ?? req.body?.googleSub;
+  const idToken = req.body?.idToken ?? req.body?.id_token;
 
-  if (!google_sub || !email || !name) {
+  if (!idToken || typeof idToken !== "string" || !idToken.trim()) {
     res.status(400).json({
       error: {
         code: "BAD_REQUEST",
-        message: "google_sub, email, and name are required",
+        message: "idToken is required",
+      },
+    });
+    return;
+  }
+
+  let verifiedProfile: VerifiedGoogleUser;
+  try {
+    verifiedProfile = await verifyGoogleIdToken(idToken.trim());
+  } catch (error) {
+    res.status(401).json({
+      error: {
+        code: "UNAUTHORIZED",
+        message:
+          error instanceof Error ? error.message : "Invalid Google ID token",
       },
     });
     return;
   }
 
   try {
+    const existingUser = await getUserByGoogleSub(verifiedProfile.google_sub);
+    const isNewUser = !existingUser;
+
     const user = await getOrCreateUserFromGoogle({
-      google_sub,
-      email,
-      name,
+      google_sub: verifiedProfile.google_sub,
+      email: verifiedProfile.email,
+      name: verifiedProfile.name,
     });
 
     const { rawToken } = await createSession(user.id);
     setSessionCookie(res, rawToken);
 
-    res.status(200).json({
-      user,
+    res.status(isNewUser ? 201 : 200).json({
       message: "Signed in successfully",
     });
   } catch (error) {

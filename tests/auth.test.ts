@@ -10,6 +10,7 @@ import {
 } from "../src/services/session-service.js";
 import { getOrCreateUserFromGoogle } from "../src/services/user-service.js";
 import {
+  createMockGoogleIdToken,
   createTestServer,
   extractSessionCookie,
   isSessionCookieCleared,
@@ -286,21 +287,23 @@ describe("Authentication & Session Management", () => {
   });
 
   describe("HTTP Sign-in & Authentication Flow", () => {
-    it("POST /api/auth/sign-in successfully signs in, creates session, and sets cookie", async () => {
+    it("POST /api/auth/sign-in returns 201 on first sign-in, creates user/session, omits user from response, and sets cookie", async () => {
+      const mockToken = createMockGoogleIdToken({
+        sub: "google-sub-api-login",
+        email: "student.login@dlsu.edu.ph",
+        name: "API Login Student",
+      });
+
       const res = await fetch(`${baseUrl}/api/auth/sign-in`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          google_sub: "google-sub-api-login",
-          email: "student.login@dlsu.edu.ph",
-          name: "API Login Student",
-        }),
+        body: JSON.stringify({ idToken: mockToken }),
       });
 
-      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.status, 201);
       const data = await res.json();
-      assert.strictEqual(data.user.role, "Student");
-      assert.strictEqual(data.user.email, "student.login@dlsu.edu.ph");
+      assert.strictEqual(data.message, "Signed in successfully");
+      assert.strictEqual(data.user, undefined);
 
       // Verify cookie is set
       const cookie = extractSessionCookie(res);
@@ -314,22 +317,82 @@ describe("Authentication & Session Management", () => {
       });
       assert.strictEqual(meRes.status, 200);
       const meData = await meRes.json();
-      assert.strictEqual(meData.user.id, data.user.id);
+      assert.strictEqual(meData.user.email, "student.login@dlsu.edu.ph");
+      assert.strictEqual(meData.user.name, "API Login Student");
+      assert.strictEqual(meData.user.role, "Student");
     });
 
-    it("POST /api/auth/sign-in returns 400 when required fields are missing", async () => {
+    it("POST /api/auth/sign-in returns 200 on repeat sign-in for existing user", async () => {
+      const mockToken = createMockGoogleIdToken({
+        sub: "google-sub-repeat-api-login",
+        email: "repeat.api@dlsu.edu.ph",
+        name: "Repeat API Student",
+      });
+
+      // First sign-in
+      const firstRes = await fetch(`${baseUrl}/api/auth/sign-in`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: mockToken }),
+      });
+      assert.strictEqual(firstRes.status, 201);
+
+      // Second sign-in with same verified identity
+      const repeatRes = await fetch(`${baseUrl}/api/auth/sign-in`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: mockToken }),
+      });
+      assert.strictEqual(repeatRes.status, 200);
+      const repeatData = await repeatRes.json();
+      assert.strictEqual(repeatData.message, "Signed in successfully");
+      assert.strictEqual(repeatData.user, undefined);
+      assert.ok(extractSessionCookie(repeatRes));
+    });
+
+    it("POST /api/auth/sign-in returns 400 when idToken is missing", async () => {
+      const res = await fetch(`${baseUrl}/api/auth/sign-in`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      assert.strictEqual(res.status, 400);
+      const data = await res.json();
+      assert.strictEqual(data.error.code, "BAD_REQUEST");
+    });
+
+    it("POST /api/auth/sign-in returns 401 when idToken is invalid or unverified", async () => {
+      const res = await fetch(`${baseUrl}/api/auth/sign-in`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: "invalid-token" }),
+      });
+
+      assert.strictEqual(res.status, 401);
+      const data = await res.json();
+      assert.strictEqual(data.error.code, "UNAUTHORIZED");
+    });
+
+    it("POST /api/auth/sign-in does not accept untrusted client-provided identities", async () => {
       const res = await fetch(`${baseUrl}/api/auth/sign-in`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: "missing_sub@dlsu.edu.ph",
-          name: "No Sub",
+          google_sub: "spoofed-admin-sub",
+          email: "admin@dlsu.edu.ph",
+          name: "Spoofed Admin",
         }),
       });
 
       assert.strictEqual(res.status, 400);
       const data = await res.json();
       assert.strictEqual(data.error.code, "BAD_REQUEST");
+
+      const dbCheck = await pool.query(
+        "SELECT * FROM users WHERE google_sub = 'spoofed-admin-sub';"
+      );
+      assert.strictEqual(dbCheck.rowCount, 0);
     });
   });
 });
