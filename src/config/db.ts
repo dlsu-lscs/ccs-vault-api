@@ -6,6 +6,8 @@ const { Pool } = pg;
 function isTestEnvironment(): boolean {
   return (
     process.env.NODE_ENV === "test" ||
+    // NODE_TEST_CONTEXT is set by Node's built-in test runner on worker/child processes
+    !!process.env.NODE_TEST_CONTEXT ||
     process.argv.includes("--test") ||
     process.execArgv.includes("--test") ||
     process.argv.some((arg) => arg.includes("--test"))

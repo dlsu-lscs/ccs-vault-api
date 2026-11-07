@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { after, before, beforeEach, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it, mock } from "node:test";
 import pool from "../src/config/db.js";
 import {
   createSession,
@@ -9,6 +9,9 @@ import {
   validateSession,
 } from "../src/services/session-service.js";
 import { getOrCreateUserFromGoogle } from "../src/services/user-service.js";
+import {
+  verifyGoogleIdToken,
+} from "../src/services/google-auth-service.js";
 import {
   createMockGoogleIdToken,
   createTestServer,
@@ -394,5 +397,171 @@ describe("Authentication & Session Management", () => {
       );
       assert.strictEqual(dbCheck.rowCount, 0);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Production token-verification path (mocked fetch)
+// ---------------------------------------------------------------------------
+
+describe("Production Google token verification (tokeninfo path)", () => {
+  const GOOGLE_CLIENT_ID = "test-prod-client-id";
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalClientId = process.env.GOOGLE_CLIENT_ID;
+
+  before(() => {
+    // Temporarily switch to production mode so verifyGoogleIdToken uses tokeninfo
+    process.env.NODE_ENV = "production";
+    process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
+  });
+
+  after(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+    process.env.GOOGLE_CLIENT_ID = originalClientId;
+    mock.restoreAll();
+  });
+
+  function makeFetchStub(response: object, ok = true): typeof globalThis.fetch {
+    return async () =>
+      ({
+        ok,
+        json: async () => response,
+      } as Response);
+  }
+
+  it("accepts a valid DLSU token from tokeninfo", async () => {
+    const payload = {
+      sub: "prod-sub-1",
+      email: "valid.user@dlsu.edu.ph",
+      name: "Valid User",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "true",
+      hd: "dlsu.edu.ph",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    const user = await verifyGoogleIdToken("any-opaque-token");
+    assert.strictEqual(user.email, "valid.user@dlsu.edu.ph");
+    assert.strictEqual(user.hd, "dlsu.edu.ph");
+    assert.strictEqual(user.email_verified, true);
+  });
+
+  it("rejects token with wrong audience", async () => {
+    const payload = {
+      sub: "prod-sub-2",
+      email: "user@dlsu.edu.ph",
+      aud: "wrong-client-id",
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "true",
+      hd: "dlsu.edu.ph",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("audience"));
+        return true;
+      }
+    );
+  });
+
+  it("rejects token with wrong issuer", async () => {
+    const payload = {
+      sub: "prod-sub-3",
+      email: "user@dlsu.edu.ph",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "https://evil.example.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "true",
+      hd: "dlsu.edu.ph",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("issuer"));
+        return true;
+      }
+    );
+  });
+
+  it("rejects an expired token", async () => {
+    const payload = {
+      sub: "prod-sub-4",
+      email: "user@dlsu.edu.ph",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) - 3600), // 1 hour ago
+      email_verified: "true",
+      hd: "dlsu.edu.ph",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("expired"));
+        return true;
+      }
+    );
+  });
+
+  it("rejects token from non-DLSU hosted domain", async () => {
+    const payload = {
+      sub: "prod-sub-5",
+      email: "outsider@gmail.com",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "true",
+      hd: "gmail.com",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("DLSU"));
+        return true;
+      }
+    );
+  });
+
+  it("rejects token with unverified email", async () => {
+    const payload = {
+      sub: "prod-sub-6",
+      email: "unverified@dlsu.edu.ph",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "false",
+      hd: "dlsu.edu.ph",
+    };
+    mock.method(globalThis, "fetch", makeFetchStub(payload));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("verified"));
+        return true;
+      }
+    );
+  });
+
+  it("rejects when tokeninfo returns a non-ok response", async () => {
+    mock.method(globalThis, "fetch", makeFetchStub({}, false));
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: Error) => {
+        assert.ok(err.message.includes("Invalid") || err.message.includes("expired"));
+        return true;
+      }
+    );
   });
 });

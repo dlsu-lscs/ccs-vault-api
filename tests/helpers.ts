@@ -91,6 +91,8 @@ export function createMockGoogleIdToken(payload: {
   aud?: string;
   iss?: string;
   exp?: number;
+  email_verified?: boolean;
+  hd?: string;
 }): string {
   const header = Buffer.from(
     JSON.stringify({ alg: "RS256", typ: "JWT" })
@@ -103,7 +105,8 @@ export function createMockGoogleIdToken(payload: {
       name: payload.name,
       aud: payload.aud ?? process.env.GOOGLE_CLIENT_ID ?? "test-client-id",
       exp: payload.exp ?? Math.floor(Date.now() / 1000) + 3600,
-      email_verified: true,
+      email_verified: payload.email_verified ?? true,
+      hd: payload.hd ?? payload.email.split("@")[1],
     })
   ).toString("base64url");
   const signature = Buffer.from("mock-signature").toString("base64url");
