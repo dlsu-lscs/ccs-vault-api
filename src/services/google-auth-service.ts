@@ -2,6 +2,8 @@ export interface VerifiedGoogleUser {
   google_sub: string;
   email: string;
   name: string;
+  email_verified: boolean;
+  hd?: string;
 }
 
 type TokenVerifier = (idToken: string) => Promise<VerifiedGoogleUser>;
@@ -9,7 +11,21 @@ type TokenVerifier = (idToken: string) => Promise<VerifiedGoogleUser>;
 let customVerifier: TokenVerifier | null = null;
 
 export function setGoogleTokenVerifier(verifier: TokenVerifier | null): void {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("setGoogleTokenVerifier must not be called in production");
+  }
   customVerifier = verifier;
+}
+
+const ALLOWED_HD = "dlsu.edu.ph";
+
+function assertDlsuAccount(emailVerified: boolean | string, hd?: string): void {
+  if (!emailVerified || emailVerified === "false") {
+    throw new Error("Google account email is not verified");
+  }
+  if (hd !== ALLOWED_HD) {
+    throw new Error("Sign-in is restricted to DLSU accounts (@dlsu.edu.ph)");
+  }
 }
 
 export async function verifyGoogleIdToken(
@@ -41,6 +57,8 @@ export async function verifyGoogleIdToken(
         google_sub: sub,
         email,
         name: name || email.split("@")[0],
+        email_verified: true,
+        hd: email.split("@")[1],
       };
     }
 
@@ -71,13 +89,22 @@ export async function verifyGoogleIdToken(
           throw new Error("Google ID token missing required claims (sub or email)");
         }
 
+        assertDlsuAccount(payload.email_verified ?? false, payload.hd);
+
         return {
           google_sub: payload.sub,
           email: payload.email,
           name: payload.name || payload.email.split("@")[0],
+          email_verified: !!payload.email_verified,
+          hd: payload.hd,
         };
       } catch (err) {
-        if (err instanceof Error && err.message.startsWith("Google ID token")) {
+        if (
+          err instanceof Error &&
+          (err.message.startsWith("Google ID token") ||
+            err.message.startsWith("Google account") ||
+            err.message.startsWith("Sign-in is restricted"))
+        ) {
           throw err;
         }
         throw new Error("Invalid Google ID token");
@@ -108,6 +135,7 @@ export async function verifyGoogleIdToken(
     iss?: string;
     exp?: string | number;
     email_verified?: string | boolean;
+    hd?: string;
   };
 
   if (payload.aud !== googleClientId) {
@@ -129,9 +157,13 @@ export async function verifyGoogleIdToken(
     throw new Error("Google ID token missing required claims (sub or email)");
   }
 
+  assertDlsuAccount(payload.email_verified ?? false, payload.hd);
+
   return {
     google_sub: payload.sub,
     email: payload.email,
     name: payload.name || payload.email.split("@")[0],
+    email_verified: payload.email_verified === true || payload.email_verified === "true",
+    hd: payload.hd,
   };
 }

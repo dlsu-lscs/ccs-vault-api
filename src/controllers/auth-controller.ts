@@ -14,6 +14,8 @@ import {
   getOrCreateUserFromGoogle,
   getUserByGoogleSub,
 } from "../services/user-service.js";
+import { DuplicateEmailError } from "../repositories/user-repository.js";
+import { toPublicUser } from "../models/user.js";
 
 export async function signIn(req: Request, res: Response): Promise<void> {
   const idToken = req.body?.idToken ?? req.body?.id_token;
@@ -69,6 +71,16 @@ export async function signIn(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    if (error instanceof DuplicateEmailError) {
+      res.status(409).json({
+        error: {
+          code: "CONFLICT",
+          message: error.message,
+        },
+      });
+      return;
+    }
+
     console.error("Sign-in failed:", error);
     res.status(500).json({
       error: {
@@ -111,6 +123,6 @@ export async function signOut(req: Request, res: Response): Promise<void> {
 
 export async function getCurrentUser(req: Request, res: Response): Promise<void> {
   res.status(200).json({
-    user: req.user,
+    user: req.user ? toPublicUser(req.user) : undefined,
   });
 }

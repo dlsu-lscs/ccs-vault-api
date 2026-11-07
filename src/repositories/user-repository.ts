@@ -7,6 +7,13 @@ export interface UpsertUserData {
   name: string;
 }
 
+export class DuplicateEmailError extends Error {
+  constructor(email: string) {
+    super(`An account already exists with email: ${email}`);
+    this.name = "DuplicateEmailError";
+  }
+}
+
 export async function upsertUser(data: UpsertUserData): Promise<User> {
   const query = `
     INSERT INTO users (google_sub, email, name, role)
@@ -19,8 +26,24 @@ export async function upsertUser(data: UpsertUserData): Promise<User> {
   `;
 
   const values = [data.google_sub, data.email, data.name];
-  const result = await pool.query<User>(query, values);
-  return result.rows[0];
+  try {
+    const result = await pool.query<User>(query, values);
+    return result.rows[0];
+  } catch (err: unknown) {
+    // PostgreSQL unique_violation error code: 23505
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code: string }).code === "23505" &&
+      "constraint" in err &&
+      typeof (err as { constraint: string }).constraint === "string" &&
+      (err as { constraint: string }).constraint.includes("email")
+    ) {
+      throw new DuplicateEmailError(data.email);
+    }
+    throw err;
+  }
 }
 
 export async function findById(id: string): Promise<User | null> {
