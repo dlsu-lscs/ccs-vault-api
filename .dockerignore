@@ -6,5 +6,4 @@ dist
 .env.*
 !.env.example
 docs
-database
 *.md
