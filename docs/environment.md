@@ -5,6 +5,7 @@ Variables marked "yes" are read by the code at runtime. The rest are planned and
 | Variable | Used by code | Secret | Phase | Purpose |
 |---|---|---|---|---|
 | `PORT` | yes | no | runtime | HTTP port (default 3001) |
+| `TRUST_PROXY` | yes | no | runtime | Express `trust proxy` setting (defaults to `1` for Dokploy/Traefik; accepts hop count, `false`, or trusted subnets) |
 | `NODE_ENV` | yes | no | runtime | Environment mode (`development`, `staging`, `production`, `test`) |
 | `DATABASE_URL` | yes | yes | runtime | PostgreSQL connection string |
 | `GOOGLE_CLIENT_ID` | yes | yes | runtime | Google OAuth Client ID for verifying ID tokens |

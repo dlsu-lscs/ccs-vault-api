@@ -1,8 +1,5 @@
 import { Request, Response } from "express";
-import {
-  verifyGoogleIdToken,
-  VerifiedGoogleUser,
-} from "../services/google-auth-service.js";
+import { verifyGoogleIdToken } from "../services/google-auth-service.js";
 import {
   clearSessionCookie,
   createSession,
@@ -16,104 +13,58 @@ import {
 } from "../services/user-service.js";
 import { DuplicateEmailError } from "../repositories/user-repository.js";
 import { toPublicUser } from "../models/user.js";
+import { BadRequestError, ConflictError } from "../utils/errors.js";
 
 export async function signIn(req: Request, res: Response): Promise<void> {
   const idToken = req.body?.idToken ?? req.body?.id_token;
 
   if (!idToken || typeof idToken !== "string" || !idToken.trim()) {
-    res.status(400).json({
-      error: {
-        code: "BAD_REQUEST",
-        message: "idToken is required",
-      },
-    });
-    return;
+    throw new BadRequestError("idToken is required");
   }
 
-  let verifiedProfile: VerifiedGoogleUser;
-  try {
-    verifiedProfile = await verifyGoogleIdToken(idToken.trim());
-  } catch (error) {
-    res.status(401).json({
-      error: {
-        code: "UNAUTHORIZED",
-        message:
-          error instanceof Error ? error.message : "Invalid Google ID token",
-      },
-    });
-    return;
-  }
+  const verifiedProfile = await verifyGoogleIdToken(idToken.trim());
 
+  let isNewUser: boolean;
+  let userId: string;
   try {
     const existingUser = await getUserByGoogleSub(verifiedProfile.google_sub);
-    const isNewUser = !existingUser;
+    isNewUser = !existingUser;
 
     const user = await getOrCreateUserFromGoogle({
       google_sub: verifiedProfile.google_sub,
       email: verifiedProfile.email,
       name: verifiedProfile.name,
     });
-
-    const { rawToken } = await createSession(user.id);
-    setSessionCookie(res, rawToken);
-
-    res.status(isNewUser ? 201 : 200).json({
-      message: "Signed in successfully",
-    });
+    userId = user.id;
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Invalid profile:")) {
-      res.status(400).json({
-        error: {
-          code: "BAD_REQUEST",
-          message: error.message,
-        },
-      });
-      return;
+      throw new BadRequestError(error.message, { cause: error });
     }
 
     if (error instanceof DuplicateEmailError) {
-      res.status(409).json({
-        error: {
-          code: "CONFLICT",
-          message: error.message,
-        },
-      });
-      return;
+      throw new ConflictError(error.message, { cause: error });
     }
 
-    console.error("Sign-in failed:", error);
-    res.status(500).json({
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to sign in",
-      },
-    });
+    throw error;
   }
+
+  const { rawToken } = await createSession(userId);
+  setSessionCookie(res, rawToken);
+
+  res.status(isNewUser ? 201 : 200).json({
+    message: "Signed in successfully",
+  });
 }
 
 export async function signOut(req: Request, res: Response): Promise<void> {
   const token = parseSessionTokenFromCookie(req.headers.cookie);
 
-  let deleteError: unknown = null;
   try {
     if (token) {
       await deleteSession(token);
     }
-  } catch (error) {
-    deleteError = error;
   } finally {
     clearSessionCookie(res);
-  }
-
-  if (deleteError) {
-    console.error("Failed to delete session during sign out:", deleteError);
-    res.status(500).json({
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to sign out",
-      },
-    });
-    return;
   }
 
   res.status(200).json({

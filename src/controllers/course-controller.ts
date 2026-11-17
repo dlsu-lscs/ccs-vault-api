@@ -5,16 +5,6 @@ export async function getCourses(
   _req: Request,
   res: Response
 ): Promise<void> {
-  try {
-    const courses = await courseService.getCoursesWithPublishedResourceCount();
-    res.status(200).json(courses);
-  } catch (error) {
-    console.error("Failed to fetch courses:", error);
-    res.status(500).json({
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "An unexpected error occurred while retrieving courses",
-      },
-    });
-  }
+  const courses = await courseService.getCoursesWithPublishedResourceCount();
+  res.status(200).json(courses);
 }

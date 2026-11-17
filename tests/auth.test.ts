@@ -10,8 +10,14 @@ import {
 } from "../src/services/session-service.js";
 import { getOrCreateUserFromGoogle } from "../src/services/user-service.js";
 import {
+  GOOGLE_TOKENINFO_TIMEOUT_MS,
   verifyGoogleIdToken,
 } from "../src/services/google-auth-service.js";
+import {
+  ConfigurationError,
+  InvalidGoogleTokenError,
+  ServiceUnavailableError,
+} from "../src/utils/errors.js";
 import {
   createMockGoogleIdToken,
   createTestServer,
@@ -559,7 +565,108 @@ describe("Production Google token verification (tokeninfo path)", () => {
     await assert.rejects(
       () => verifyGoogleIdToken("any-opaque-token"),
       (err: Error) => {
+        assert.ok(err instanceof InvalidGoogleTokenError);
         assert.ok(err.message.includes("Invalid") || err.message.includes("expired"));
+        return true;
+      }
+    );
+  });
+
+  it("passes an AbortSignal timeout to tokeninfo fetch", async () => {
+    let receivedInit: RequestInit | undefined;
+    const payload = {
+      sub: "prod-sub-signal",
+      email: "signal.user@dlsu.edu.ph",
+      name: "Signal User",
+      aud: GOOGLE_CLIENT_ID,
+      iss: "accounts.google.com",
+      exp: String(Math.floor(Date.now() / 1000) + 3600),
+      email_verified: "true",
+      hd: "dlsu.edu.ph",
+    };
+
+    mock.method(
+      globalThis,
+      "fetch",
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        receivedInit = init;
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+    );
+
+    assert.strictEqual(GOOGLE_TOKENINFO_TIMEOUT_MS, 5000);
+    await verifyGoogleIdToken("any-opaque-token");
+    assert.ok(receivedInit?.signal instanceof AbortSignal);
+  });
+
+  it("throws ConfigurationError when GOOGLE_CLIENT_ID is missing in production", async () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    try {
+      await assert.rejects(
+        () => verifyGoogleIdToken("any-opaque-token"),
+        (err: unknown) => {
+          assert.ok(err instanceof ConfigurationError);
+          assert.strictEqual(err.statusCode, 503);
+          assert.strictEqual(err.expose, false);
+          assert.ok(err.message.includes("GOOGLE_CLIENT_ID"));
+          assert.ok(!err.clientMessage.includes("GOOGLE_CLIENT_ID"));
+          return true;
+        }
+      );
+    } finally {
+      process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
+    }
+  });
+
+  it("throws ServiceUnavailableError when tokeninfo request times out", async () => {
+    mock.method(globalThis, "fetch", async () => {
+      throw new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError"
+      );
+    });
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: unknown) => {
+        assert.ok(err instanceof ServiceUnavailableError);
+        assert.strictEqual(err.statusCode, 503);
+        assert.strictEqual(err.expose, false);
+        assert.ok(err.message.includes("timed out"));
+        return true;
+      }
+    );
+  });
+
+  it("throws ServiceUnavailableError when tokeninfo returns a 5xx status", async () => {
+    mock.method(
+      globalThis,
+      "fetch",
+      async () => new Response(null, { status: 503 })
+    );
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: unknown) => {
+        assert.ok(err instanceof ServiceUnavailableError);
+        assert.strictEqual(err.statusCode, 503);
+        return true;
+      }
+    );
+  });
+
+  it("throws ServiceUnavailableError when tokeninfo returns invalid JSON", async () => {
+    mock.method(
+      globalThis,
+      "fetch",
+      async () => new Response("<html>Bad Gateway</html>", { status: 200 })
+    );
+
+    await assert.rejects(
+      () => verifyGoogleIdToken("any-opaque-token"),
+      (err: unknown) => {
+        assert.ok(err instanceof ServiceUnavailableError);
+        assert.strictEqual(err.statusCode, 503);
         return true;
       }
     );
