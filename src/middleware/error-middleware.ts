@@ -50,6 +50,21 @@ function getBodyParserErrorPayload(err: unknown): HttpErrorPayload | null {
   return null;
 }
 
+function sanitizeLogValue(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
+
+function logServerError(req: Request, label: string, err: unknown): void {
+  // Keep the format string static so user-controlled path/method cannot inject format specifiers.
+  console.error(
+    "[%s %s] %s:",
+    sanitizeLogValue(req.method),
+    sanitizeLogValue(req.path),
+    label,
+    err
+  );
+}
+
 /**
  * Fallback middleware for unmatched routes so 404 responses stay in JSON format.
  */
@@ -80,7 +95,7 @@ export function errorHandler(
 
   if (err instanceof AppError) {
     if (!err.expose || err.statusCode >= 500) {
-      console.error(`[${req.method} ${req.path}] ${err.name}:`, err);
+      logServerError(req, err.name, err);
     }
 
     res.status(err.statusCode).json({
@@ -103,7 +118,7 @@ export function errorHandler(
     return;
   }
 
-  console.error(`[${req.method} ${req.path}] Unhandled error:`, err);
+  logServerError(req, "Unhandled error", err);
   res.status(500).json({
     error: {
       code: "INTERNAL_SERVER_ERROR",

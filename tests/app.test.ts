@@ -154,7 +154,7 @@ describe("App Configuration, Error Handling, and Proxy Rate Limiting", () => {
 
       const testApp = express();
       testApp.use(express.json());
-      testApp.get("/boom", async () => {
+      testApp.get("/boom/:tag", async () => {
         throw new Error("internal database secret at /app/src/db.ts");
       });
       testApp.use(notFoundHandler);
@@ -166,7 +166,7 @@ describe("App Configuration, Error Handling, and Proxy Rate Limiting", () => {
       const port = (server.address() as AddressInfo).port;
 
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/boom`);
+        const res = await fetch(`http://127.0.0.1:${port}/boom/%25s%25s%25n`);
         assert.strictEqual(res.status, 500);
 
         const rawText = await res.text();
@@ -180,7 +180,12 @@ describe("App Configuration, Error Handling, and Proxy Rate Limiting", () => {
           },
         });
 
-        assert.ok(consoleErrors.length >= 1);
+        assert.strictEqual(consoleErrors.length, 1);
+        assert.strictEqual(consoleErrors[0][0], "[%s %s] %s:");
+        assert.strictEqual(consoleErrors[0][1], "GET");
+        assert.strictEqual(consoleErrors[0][2], "/boom/%25s%25s%25n");
+        assert.strictEqual(consoleErrors[0][3], "Unhandled error");
+        assert.ok(consoleErrors[0][4] instanceof Error);
       } finally {
         await new Promise<void>((resolve, reject) =>
           server.close((err) => (err ? reject(err) : resolve()))
@@ -225,7 +230,8 @@ describe("App Configuration, Error Handling, and Proxy Rate Limiting", () => {
         );
 
         assert.strictEqual(consoleErrors.length, 1);
-        const loggedError = consoleErrors[0][1];
+        assert.strictEqual(consoleErrors[0][0], "[%s %s] %s:");
+        const loggedError = consoleErrors[0][4];
         assert.ok(loggedError instanceof Error);
         assert.ok(loggedError.message.includes("GOOGLE_CLIENT_ID"));
       } finally {
@@ -285,7 +291,8 @@ describe("App Configuration, Error Handling, and Proxy Rate Limiting", () => {
         );
 
         assert.strictEqual(consoleErrors.length, 1);
-        const loggedError = consoleErrors[0][1];
+        assert.strictEqual(consoleErrors[0][0], "[%s %s] %s:");
+        const loggedError = consoleErrors[0][4];
         assert.ok(loggedError instanceof Error);
         assert.ok(loggedError.message.includes("timed out"));
       } finally {
