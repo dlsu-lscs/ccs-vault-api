@@ -30,6 +30,41 @@ jobs:
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
 
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ccs_vault_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ccs_vault_test
+        run: npm test
+
+
   secrets-and-dockerfile:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
